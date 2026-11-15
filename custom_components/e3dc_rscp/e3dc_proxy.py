@@ -146,7 +146,6 @@ class E3DCProxy:
             "soc": RscpTag.EMS_REQ_DPP_SOC_BATTERY,
             "months": RscpTag.EMS_REQ_DPP_MONTHS_ACTIVE,
             "enabled": RscpTag.EMS_REQ_DPP_PRICE_BASED_BATTERY_CHARGE_ENABLED,
-            "active": RscpTag.EMS_REQ_DPP_PRICE_BASED_BATTERY_CHARGE_ACTIVE,
         }
         result: dict[str, Any] = {}
         for key, tag in requests.items():

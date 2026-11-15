@@ -423,7 +423,7 @@ class E3DCCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     async def _load_and_process_dpp(self) -> None:
         """Load DPP settings; on failure report unknown instead of stale values."""
         keys = ("dpp-price-limit-battery", "dpp-soc-battery", "dpp-months-active",
-                "dpp-months-active-raw", "dpp-charge-enabled", "dpp-charge-active")
+                "dpp-months-active-raw", "dpp-charge-enabled")
         try:
             data: dict[str, Any] = await self.hass.async_add_executor_job(
                 self.proxy.get_dpp_settings
@@ -451,7 +451,6 @@ class E3DCCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             self._mydata["dpp-months-active-raw"] = None
             self._mydata["dpp-months-active"] = None
         self._mydata["dpp-charge-enabled"] = data.get("enabled")
-        self._mydata["dpp-charge-active"] = data.get("active")
         self._mydata["dpp-last-read"] = dt_util.utcnow()
 
     async def _load_and_process_power_settings(self):

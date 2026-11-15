@@ -128,9 +128,6 @@
             "dpp-charge-enabled": {
                 "name": "DPP price-based battery charging enabled"
             },
-            "dpp-charge-active": {
-                "name": "DPP price-based battery charging active"
-            },
             "manual-charge-active": {
                 "name": "Manual charge"
             },
