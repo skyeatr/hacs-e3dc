@@ -18,6 +18,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed, HomeAssistantError
 
 from .const import CONF_RSCPKEY
+from .dpp import DPP_READS, validate_response
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -141,19 +142,14 @@ class E3DCProxy:
     @e3dc_call
     def get_dpp_settings(self) -> dict[str, Any]:
         """Read dynamic power price (AI 360 / DPP) battery settings, read-only."""
-        requests = {
-            "price-limit": RscpTag.EMS_REQ_DPP_PRICE_LIMIT_BATTERY,
-            "soc": RscpTag.EMS_REQ_DPP_SOC_BATTERY,
-            "months": RscpTag.EMS_REQ_DPP_MONTHS_ACTIVE,
-            "enabled": RscpTag.EMS_REQ_DPP_PRICE_BASED_BATTERY_CHARGE_ENABLED,
-        }
         result: dict[str, Any] = {}
-        for key, tag in requests.items():
-            data = self.e3dc.sendRequest((tag, RscpType.NoneType, None), keepAlive=True)
-            if data is None or data[1] == RscpType.Error.name:
-                result[key] = None
-            else:
-                result[key] = data[2]
+        for key, (req_tag, _resp_tag, _resp_type) in DPP_READS.items():
+            data = self.e3dc.sendRequest(
+                (req_tag, RscpType.NoneType, None), keepAlive=True
+            )
+            result[key] = validate_response(key, data)
+            if result[key] is None:
+                _LOGGER.warning("Unexpected DPP response for %s: %s", key, data)
         return result
 
     @e3dc_call

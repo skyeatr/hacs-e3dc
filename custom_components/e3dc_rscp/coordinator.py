@@ -29,6 +29,7 @@ from homeassistant.const import (
 
 from custom_components.e3dc_rscp.utils import initialize_farm_controller_flow_if_needed
 
+from .dpp import ENTITY_KEYS as DPP_ENTITY_KEYS, evaluate
 from .const import (
     CONF_RSCPKEY,
     CONF_CREATE_BATTERY_DEVICES,
@@ -45,7 +46,7 @@ from .battery_manager import E3DCBatteryManager, E3DCBattery, E3DCBatteryPack
 _LOGGER = logging.getLogger(__name__)
 _STAT_REFRESH_INTERVAL = 60
 _DPP_REFRESH_INTERVAL = 900
-_MONTHS = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
+_DPP_RETRY_INTERVAL = 300
 
 # Maps the system status flags as delivered by get_system_status() onto our
 # coordinator data keys. All of them are booleans describing the current state of
@@ -415,43 +416,40 @@ class E3DCCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # DPP (AI 360) settings change rarely: poll slowly, read-only.
         if self._next_dpp_update < time():
             _LOGGER.debug("Polling DPP settings")
-            await self._load_and_process_dpp()
-            self._next_dpp_update = time() + _DPP_REFRESH_INTERVAL
+            ok = await self._load_and_process_dpp()
+            self._next_dpp_update = time() + (
+                _DPP_REFRESH_INTERVAL if ok else _DPP_RETRY_INTERVAL
+            )
 
         return self._mydata
 
-    async def _load_and_process_dpp(self) -> None:
-        """Load DPP settings; on failure report unknown instead of stale values."""
-        keys = ("dpp-price-limit-battery", "dpp-soc-battery", "dpp-months-active",
-                "dpp-months-active-raw", "dpp-charge-enabled")
+    async def _load_and_process_dpp(self) -> bool:
+        """Load DPP settings, read-only and all-or-nothing.
+
+        Any communication error, unexpected response or partial read sets all
+        DPP entities to unknown and leaves dpp-last-read unchanged. Auth errors
+        are re-raised so Home Assistant starts re-authentication. Other errors
+        never abort the main coordinator update.
+        """
         try:
-            data: dict[str, Any] = await self.hass.async_add_executor_job(
+            raw: dict[str, Any] = await self.hass.async_add_executor_job(
                 self.proxy.get_dpp_settings
             )
         except ConfigEntryAuthFailed:
             raise
-        except HomeAssistantError as ex:
+        except Exception as ex:  # noqa: BLE001 - DPP must never break the main poll
             _LOGGER.warning("Failed to load DPP settings, reporting unknown: %s", ex)
-            for key in keys:
-                self._mydata[key] = None
-            return
+            raw = None
 
-        price = data.get("price-limit")
-        self._mydata["dpp-price-limit-battery"] = (
-            round(price, 2) if isinstance(price, (int, float)) else None
-        )
-        self._mydata["dpp-soc-battery"] = data.get("soc")
-        months = data.get("months")
-        if isinstance(months, int):
-            self._mydata["dpp-months-active-raw"] = months
-            self._mydata["dpp-months-active"] = ", ".join(
-                name for bit, name in enumerate(_MONTHS) if months & (1 << bit)
-            ) or "none"
-        else:
-            self._mydata["dpp-months-active-raw"] = None
-            self._mydata["dpp-months-active"] = None
-        self._mydata["dpp-charge-enabled"] = data.get("enabled")
+        values = evaluate(raw)
+        if values is None:
+            for key in DPP_ENTITY_KEYS:
+                self._mydata[key] = None
+            return False
+
+        self._mydata.update(values)
         self._mydata["dpp-last-read"] = dt_util.utcnow()
+        return True
 
     async def _load_and_process_power_settings(self):
         """Load and process power settings."""
