@@ -125,6 +125,12 @@
             "pset-limit-enabled": {
                 "name": "Power limits"
             },
+            "dpp-charge-enabled": {
+                "name": "DPP price-based battery charging enabled"
+            },
+            "dpp-charge-active": {
+                "name": "DPP price-based battery charging active"
+            },
             "manual-charge-active": {
                 "name": "Manual charge"
             },
@@ -486,6 +492,21 @@
             },
             "db-day-selfconsumption": {
                 "name": "Self consumption - today"
+            },
+            "dpp-price-limit-battery": {
+                "name": "DPP price limit battery"
+            },
+            "dpp-soc-battery": {
+                "name": "DPP target SoC battery"
+            },
+            "dpp-months-active": {
+                "name": "DPP active months"
+            },
+            "dpp-months-active-raw": {
+                "name": "DPP active months (raw)"
+            },
+            "dpp-last-read": {
+                "name": "DPP last read"
             },
             "manual-charge-energy": {
                 "name": "Energy charged from grid"

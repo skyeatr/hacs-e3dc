@@ -278,6 +278,38 @@ SENSOR_DESCRIPTIONS: Final[tuple[E3DCSensorEntityDescription, ...]] = (
         state_class=SensorStateClass.MEASUREMENT,
     ),
     E3DCSensorEntityDescription(
+        key="dpp-price-limit-battery",
+        translation_key="dpp-price-limit-battery",
+        icon="mdi:cash-clock",
+        native_unit_of_measurement="ct/kWh",
+        suggested_display_precision=1,
+    ),
+    E3DCSensorEntityDescription(
+        key="dpp-soc-battery",
+        translation_key="dpp-soc-battery",
+        icon="mdi:battery-clock",
+        native_unit_of_measurement=PERCENTAGE,
+        suggested_display_precision=0,
+    ),
+    E3DCSensorEntityDescription(
+        key="dpp-months-active",
+        translation_key="dpp-months-active",
+        icon="mdi:calendar-month",
+    ),
+    E3DCSensorEntityDescription(
+        key="dpp-months-active-raw",
+        translation_key="dpp-months-active-raw",
+        icon="mdi:calendar-month",
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    E3DCSensorEntityDescription(
+        key="dpp-last-read",
+        translation_key="dpp-last-read",
+        icon="mdi:clock-check-outline",
+        device_class=SensorDeviceClass.TIMESTAMP,
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    E3DCSensorEntityDescription(
         key="manual-charge-energy",
         translation_key="manual-charge-energy",
         icon="mdi:transmission-tower",

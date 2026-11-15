@@ -139,6 +139,25 @@ class E3DCProxy:
         return self.e3dc.get_db_data_timestamp(timestamp, timespan_seconds, True)
 
     @e3dc_call
+    def get_dpp_settings(self) -> dict[str, Any]:
+        """Read dynamic power price (AI 360 / DPP) battery settings, read-only."""
+        requests = {
+            "price-limit": RscpTag.EMS_REQ_DPP_PRICE_LIMIT_BATTERY,
+            "soc": RscpTag.EMS_REQ_DPP_SOC_BATTERY,
+            "months": RscpTag.EMS_REQ_DPP_MONTHS_ACTIVE,
+            "enabled": RscpTag.EMS_REQ_DPP_PRICE_BASED_BATTERY_CHARGE_ENABLED,
+            "active": RscpTag.EMS_REQ_DPP_PRICE_BASED_BATTERY_CHARGE_ACTIVE,
+        }
+        result: dict[str, Any] = {}
+        for key, tag in requests.items():
+            data = self.e3dc.sendRequest((tag, RscpType.NoneType, None), keepAlive=True)
+            if data is None or data[1] == RscpType.Error.name:
+                result[key] = None
+            else:
+                result[key] = data[2]
+        return result
+
+    @e3dc_call
     def get_manual_charge(self) -> dict[str, Any]:
         """Poll manual charging state."""
         data = self.e3dc.sendRequest(

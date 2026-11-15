@@ -49,6 +49,19 @@ SENSOR_DESCRIPTIONS: Final[tuple[E3DCBinarySensorEntityDescription, ...]] = (
         off_icon="mdi:signal-off",
     ),
     E3DCBinarySensorEntityDescription(
+        key="dpp-charge-enabled",
+        translation_key="dpp-charge-enabled",
+        on_icon="mdi:cash-check",
+        off_icon="mdi:cash-remove",
+    ),
+    E3DCBinarySensorEntityDescription(
+        key="dpp-charge-active",
+        translation_key="dpp-charge-active",
+        device_class=BinarySensorDeviceClass.RUNNING,
+        on_icon="mdi:transmission-tower-import",
+        off_icon="mdi:transmission-tower-off",
+    ),
+    E3DCBinarySensorEntityDescription(
         key="manual-charge-active",
         translation_key="manual-charge-active",
         device_class=BinarySensorDeviceClass.RUNNING,

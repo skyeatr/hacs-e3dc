@@ -10,6 +10,8 @@ import re
 from e3dc._rscpTags import PowermeterType
 
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.util import dt as dt_util
+from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.core import HomeAssistant, callback, Event
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers.event import async_track_time_interval
@@ -42,6 +44,8 @@ from .battery_manager import E3DCBatteryManager, E3DCBattery, E3DCBatteryPack
 
 _LOGGER = logging.getLogger(__name__)
 _STAT_REFRESH_INTERVAL = 60
+_DPP_REFRESH_INTERVAL = 900
+_MONTHS = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
 
 # Maps the system status flags as delivered by get_system_status() onto our
 # coordinator data keys. All of them are booleans describing the current state of
@@ -97,6 +101,7 @@ class E3DCCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._sgready_available: bool = False
         self._timezone_offset: int = 0
         self._next_stat_update: float = 0
+        self._next_dpp_update: float = 0
         self._isFarmController: bool = config_entry.data.get("farmcontroller", False)
 
         # Initialize battery manager
@@ -407,7 +412,47 @@ class E3DCCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         else:
             _LOGGER.debug("Skipping power metrics poll.")
 
+        # DPP (AI 360) settings change rarely: poll slowly, read-only.
+        if self._next_dpp_update < time():
+            _LOGGER.debug("Polling DPP settings")
+            await self._load_and_process_dpp()
+            self._next_dpp_update = time() + _DPP_REFRESH_INTERVAL
+
         return self._mydata
+
+    async def _load_and_process_dpp(self) -> None:
+        """Load DPP settings; on failure report unknown instead of stale values."""
+        keys = ("dpp-price-limit-battery", "dpp-soc-battery", "dpp-months-active",
+                "dpp-months-active-raw", "dpp-charge-enabled", "dpp-charge-active")
+        try:
+            data: dict[str, Any] = await self.hass.async_add_executor_job(
+                self.proxy.get_dpp_settings
+            )
+        except ConfigEntryAuthFailed:
+            raise
+        except HomeAssistantError as ex:
+            _LOGGER.warning("Failed to load DPP settings, reporting unknown: %s", ex)
+            for key in keys:
+                self._mydata[key] = None
+            return
+
+        price = data.get("price-limit")
+        self._mydata["dpp-price-limit-battery"] = (
+            round(price, 2) if isinstance(price, (int, float)) else None
+        )
+        self._mydata["dpp-soc-battery"] = data.get("soc")
+        months = data.get("months")
+        if isinstance(months, int):
+            self._mydata["dpp-months-active-raw"] = months
+            self._mydata["dpp-months-active"] = ", ".join(
+                name for bit, name in enumerate(_MONTHS) if months & (1 << bit)
+            ) or "none"
+        else:
+            self._mydata["dpp-months-active-raw"] = None
+            self._mydata["dpp-months-active"] = None
+        self._mydata["dpp-charge-enabled"] = data.get("enabled")
+        self._mydata["dpp-charge-active"] = data.get("active")
+        self._mydata["dpp-last-read"] = dt_util.utcnow()
 
     async def _load_and_process_power_settings(self):
         """Load and process power settings."""
