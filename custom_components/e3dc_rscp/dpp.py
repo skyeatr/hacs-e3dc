@@ -101,3 +101,12 @@ def evaluate(raw: dict[str, Any] | None) -> dict[str, Any] | None:
         "dpp-months-active-raw": raw["months"],
         "dpp-charge-enabled": raw["enabled"],
     }
+
+
+MANUAL_REFRESH_MIN_INTERVAL = 60.0
+
+
+def manual_refresh_allowed(now: float, last_manual: float | None,
+                           min_interval: float = MANUAL_REFRESH_MIN_INTERVAL) -> bool:
+    """Rate limit for the manual 'read DPP now' button."""
+    return last_manual is None or now - last_manual >= min_interval

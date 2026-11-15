@@ -587,6 +587,9 @@
       }
     },
     "button": {
+      "dpp-refresh": {
+        "name": "DPP read now"
+      },
       "wallbox-toggle-wallbox-charging": {
         "name": "Toggle charging"
       },

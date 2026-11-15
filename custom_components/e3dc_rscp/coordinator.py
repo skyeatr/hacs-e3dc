@@ -29,7 +29,7 @@ from homeassistant.const import (
 
 from custom_components.e3dc_rscp.utils import initialize_farm_controller_flow_if_needed
 
-from .dpp import ENTITY_KEYS as DPP_ENTITY_KEYS, evaluate
+from .dpp import ENTITY_KEYS as DPP_ENTITY_KEYS, evaluate, manual_refresh_allowed
 from .const import (
     CONF_RSCPKEY,
     CONF_CREATE_BATTERY_DEVICES,
@@ -103,6 +103,7 @@ class E3DCCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._timezone_offset: int = 0
         self._next_stat_update: float = 0
         self._next_dpp_update: float = 0
+        self._last_dpp_manual: float | None = None
         self._isFarmController: bool = config_entry.data.get("farmcontroller", False)
 
         # Initialize battery manager
@@ -422,6 +423,20 @@ class E3DCCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             )
 
         return self._mydata
+
+    async def async_refresh_dpp(self) -> bool:
+        """Read DPP settings now (manual button), read-only, rate limited."""
+        now = time()
+        if not manual_refresh_allowed(now, self._last_dpp_manual):
+            _LOGGER.info("Manual DPP read ignored: last one less than 60 s ago")
+            return False
+        self._last_dpp_manual = now
+        ok = await self._load_and_process_dpp()
+        self._next_dpp_update = now + (
+            _DPP_REFRESH_INTERVAL if ok else _DPP_RETRY_INTERVAL
+        )
+        self.async_update_listeners()
+        return ok
 
     async def _load_and_process_dpp(self) -> bool:
         """Load DPP settings, read-only and all-or-nothing.

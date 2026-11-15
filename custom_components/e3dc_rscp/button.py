@@ -31,7 +31,14 @@ class E3DCButtonEntityDescription(ButtonEntityDescription):
     ) = None
 
 
-BUTTONS: Final[tuple[E3DCButtonEntityDescription, ...]] = ()  # None yet
+BUTTONS: Final[tuple[E3DCButtonEntityDescription, ...]] = (
+    E3DCButtonEntityDescription(
+        key="dpp-refresh",
+        translation_key="dpp-refresh",
+        icon="mdi:refresh",
+        async_press_action=lambda coordinator: coordinator.async_refresh_dpp(),
+    ),
+)
 
 
 async def async_setup_entry(

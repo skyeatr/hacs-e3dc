@@ -100,3 +100,9 @@ def test_installed_distribution_matches_ha_requirement():
     assert r.name == "pye3dc" and r.url is None
     assert r.specifier.contains(version("pye3dc"), prereleases=True)
     assert not r.specifier.contains("0.10.0", prereleases=True)
+
+
+def test_manual_refresh_rate_limit():
+    assert dpp.manual_refresh_allowed(1000.0, None)
+    assert not dpp.manual_refresh_allowed(1030.0, 1000.0)
+    assert dpp.manual_refresh_allowed(1060.0, 1000.0)
