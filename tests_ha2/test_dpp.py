@@ -106,3 +106,47 @@ def test_manual_refresh_rate_limit():
     assert dpp.manual_refresh_allowed(1000.0, None)
     assert not dpp.manual_refresh_allowed(1030.0, 1000.0)
     assert dpp.manual_refresh_allowed(1060.0, 1000.0)
+
+
+# --- ha2dpp3: price limit write -------------------------------------------
+
+def test_normalize_price_limit():
+    assert dpp.normalize_price_limit(25) == 25.0
+    assert dpp.normalize_price_limit(24.96) == 25.0
+    assert dpp.normalize_price_limit(0) == 0.0
+    assert dpp.normalize_price_limit(100.0) == 100.0
+    for bad in (-0.1, 100.1, True, None, "25", float("nan")):
+        assert dpp.normalize_price_limit(bad) is None
+
+
+def test_price_write_rate_limit():
+    assert dpp.price_write_allowed(1000.0, None)
+    assert not dpp.price_write_allowed(1299.0, 1000.0)
+    assert dpp.price_write_allowed(1300.0, 1000.0)
+
+
+def test_set_response_accepts_own_tag_any_type():
+    for typ, val in ((RscpType.Float32, 25.0), (RscpType.Bool, True), (RscpType.Char8, 0)):
+        assert dpp.validate_set_response(wire(RscpTag.EMS_DPP_SET_PRICE_LIMIT_BATTERY, typ, val))
+
+
+def test_set_response_rejects_error_and_foreign_tag():
+    assert not dpp.validate_set_response((RscpTag.EMS_DPP_SET_PRICE_LIMIT_BATTERY, RscpType.Error, 2))
+    assert not dpp.validate_set_response(wire(RscpTag.EMS_DPP_PRICE_LIMIT_BATTERY, RscpType.Float32, 25.0))
+    assert not dpp.validate_set_response(None)
+    assert not dpp.validate_set_response(("x",))
+
+
+def test_readback_matches_float32():
+    rb = dpp.validate_response("price-limit", wire(RscpTag.EMS_DPP_PRICE_LIMIT_BATTERY, RscpType.Float32, 34.9))
+    assert dpp.readback_matches(34.9, rb)
+    assert not dpp.readback_matches(35.0, rb)
+    assert not dpp.readback_matches(34.9, None)
+    assert not dpp.readback_matches(34.9, True)
+
+
+def test_request_encodes_as_float32():
+    frame = wire(RscpTag.EMS_REQ_DPP_SET_PRICE_LIMIT_BATTERY, RscpType.Float32, 25.0)
+    assert dpp._name(frame[0]) == "EMS_REQ_DPP_SET_PRICE_LIMIT_BATTERY"
+    assert dpp._name(frame[1]) == "Float32"
+    assert abs(frame[2] - 25.0) < 1e-6

@@ -749,7 +749,21 @@
                 }
             }
         },
-        "set_power_mode": {
+        "set_dpp_price_limit": {
+      "name": "Set DPP battery price limit",
+      "description": "Writes the AI 360 / DPP battery price limit (ct/kWh) and confirms it by read-back. At most once per 5 minutes. Only the price limit is changed.",
+      "fields": {
+        "device_id": {
+          "name": "E3DC Device ID",
+          "description": "E3DC Device ID."
+        },
+        "price_limit": {
+          "name": "Price limit (ct/kWh)",
+          "description": "New battery price limit, 0-100 ct/kWh, step 0.1."
+        }
+      }
+    },
+    "set_power_mode": {
             "name": "Set Power Mode",
             "description": "Sets the power mode of the E3DC unit.",
             "fields": {

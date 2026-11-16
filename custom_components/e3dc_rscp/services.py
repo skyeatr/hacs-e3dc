@@ -18,6 +18,7 @@ from .const import (
     SERVICE_MANUAL_CHARGE,
     SERVICE_SET_WALLBOX_MAX_CHARGE_CURRENT,
     SERVICE_SET_POWER_MODE,
+    SERVICE_SET_DPP_PRICE_LIMIT,
     SetPowerMode,
 )
 from .coordinator import E3DCCoordinator
@@ -32,6 +33,7 @@ ATTR_CHARGE_AMOUNT = "charge_amount"
 ATTR_MAX_CHARGE_CURRENT = "max_charge_current"
 ATTR_POWER_MODE = "power_mode"
 ATTR_POWER_VALUE = "power_value"
+ATTR_PRICE_LIMIT = "price_limit"
 
 SCHEMA_CLEAR_POWER_LIMITS = vol.Schema(
     {
@@ -58,6 +60,16 @@ SCHEMA_MANUAL_CHARGE = vol.Schema(
     {
         vol.Required(ATTR_DEVICEID): str,
         vol.Optional(ATTR_CHARGE_AMOUNT): vol.All(int, vol.Range(min=0)),
+    }
+)
+
+
+SCHEMA_SET_DPP_PRICE_LIMIT = vol.Schema(
+    {
+        vol.Required(ATTR_DEVICEID): str,
+        vol.Required(ATTR_PRICE_LIMIT): vol.All(
+            vol.Coerce(float), vol.Range(min=0.0, max=100.0)
+        ),
     }
 )
 
@@ -124,6 +136,19 @@ async def async_setup_services(hass: HomeAssistant) -> None:
         service=SERVICE_SET_POWER_MODE,
         service_func=async_call_set_power_mode,
         schema=SCHEMA_SET_POWER_MODE,
+    )
+
+    async def async_call_set_dpp_price_limit(call: ServiceCall) -> None:
+        coordinator: E3DCCoordinator = _resolve_device_id(
+            hass, call.data.get(ATTR_DEVICEID)
+        )
+        await coordinator.async_set_dpp_price_limit(call.data[ATTR_PRICE_LIMIT])
+
+    hass.services.async_register(
+        domain=DOMAIN,
+        service=SERVICE_SET_DPP_PRICE_LIMIT,
+        service_func=async_call_set_dpp_price_limit,
+        schema=SCHEMA_SET_DPP_PRICE_LIMIT,
     )
 
 

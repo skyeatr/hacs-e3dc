@@ -1,4 +1,6 @@
-"""Read-only handling of E3DC dynamic power price (DPP / AI 360) settings.
+"""Handling of E3DC dynamic power price (DPP / AI 360) settings.
+
+Reading all four values; writing only the battery price limit (ha2dpp3).
 
 Pure functions without Home Assistant imports, so they can be unit tested.
 """
@@ -110,3 +112,47 @@ def manual_refresh_allowed(now: float, last_manual: float | None,
                            min_interval: float = MANUAL_REFRESH_MIN_INTERVAL) -> bool:
     """Rate limit for the manual 'read DPP now' button."""
     return last_manual is None or now - last_manual >= min_interval
+
+
+# --- ha2dpp3: write the battery price limit only -------------------------
+
+PRICE_LIMIT_MIN = 0.0
+PRICE_LIMIT_MAX = 100.0
+PRICE_LIMIT_WRITE_MIN_INTERVAL = 300.0
+PRICE_LIMIT_READBACK_TOLERANCE = 0.05
+
+
+def normalize_price_limit(value: Any) -> float | None:
+    """Return the requested price limit in ct/kWh rounded to 0.1, or None if invalid."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    value = round(float(value), 1)
+    if value != value or not PRICE_LIMIT_MIN <= value <= PRICE_LIMIT_MAX:  # NaN check
+        return None
+    return value
+
+
+def price_write_allowed(now: float, last_write: float | None,
+                        min_interval: float = PRICE_LIMIT_WRITE_MIN_INTERVAL) -> bool:
+    """Rate limit for writing the price limit (protects the E3DC flash/EMS)."""
+    return last_write is None or now - last_write >= min_interval
+
+
+def validate_set_response(data: Any) -> bool:
+    """True if the device answered the SET request with its own response tag.
+
+    The value itself is not trusted; the price limit is always read back.
+    """
+    if not isinstance(data, (tuple, list)) or len(data) < 2:
+        return False
+    if _name(data[1]) == "Error":
+        return False
+    return _name(data[0]) == RscpTag.EMS_DPP_SET_PRICE_LIMIT_BATTERY.name
+
+
+def readback_matches(requested: float, readback: Any,
+                     tolerance: float = PRICE_LIMIT_READBACK_TOLERANCE) -> bool:
+    """Compare requested and read-back price limit (Float32 rounding tolerated)."""
+    if readback is None or isinstance(readback, bool):
+        return False
+    return abs(float(readback) - float(requested)) <= tolerance

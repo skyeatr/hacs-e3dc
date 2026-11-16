@@ -105,3 +105,22 @@ set_power_mode:
           unit_of_measurement: W
           mode: box
           step: 100
+set_dpp_price_limit:
+  fields:
+    device_id:
+      required: true
+      example: "64d3b74a1bcf319288844ff9e93e4010"
+      selector:
+        device:
+          filter:
+            integration: e3dc_rscp
+    price_limit:
+      required: true
+      example: "25.0"
+      selector:
+        number:
+          min: 0
+          max: 100
+          step: 0.1
+          unit_of_measurement: ct/kWh
+          mode: box
