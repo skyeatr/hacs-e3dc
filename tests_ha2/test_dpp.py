@@ -199,3 +199,75 @@ def test_readback_soc_and_enabled():
 def test_rate_limit_is_per_value_helper():
     assert dpp.write_allowed(1000.0, None)
     assert not dpp.write_allowed(1100.0, 1000.0)
+
+
+# --- ha2dpp3 review corrections (GPT-20261116-1818) -------------------------
+
+def test_range_checked_before_rounding():
+    assert dpp.normalize_write_value("price-limit", -0.04) is None
+    assert dpp.normalize_write_value("price-limit", 100.04) is None
+    assert dpp.normalize_write_value("price-limit", float("inf")) is None
+    assert dpp.normalize_write_value("price-limit", float("-inf")) is None
+    assert dpp.normalize_write_value("price-limit", 99.96) == 100.0
+    assert dpp.normalize_write_value("soc", float("inf")) is None
+
+
+def test_readback_rejects_non_finite_and_strings():
+    for bad in ("35.0", float("nan"), float("inf"), [35.0], True):
+        assert not dpp.readback_matches(35.0, bad, "price-limit")
+    assert not dpp.readback_matches(90, 90.0, "soc")
+    assert not dpp.readback_matches(90, "90", "soc")
+
+
+def test_set_response_string_decoding_like_pye3dc():
+    # rscpDecode returns tag and type as strings
+    assert dpp.validate_set_response(("EMS_DPP_SET_PRICE_LIMIT_BATTERY", "Float32", 25.0))
+    assert not dpp.validate_set_response(("EMS_DPP_SET_PRICE_LIMIT_BATTERY", "Error", "RSCP_ERR_NOT_AVAILABLE"))
+    assert not dpp.validate_set_response(("EMS_DPP_SET_SOC_BATTERY", "UChar8", 90))  # foreign tag for price
+
+
+class _Clock:
+    def __init__(self, t=1000.0):
+        self.t = t
+
+    def __call__(self):
+        return self.t
+
+
+def test_gate_startup_cooldown_and_per_key():
+    clk = _Clock()
+    gate = dpp.DppWriteGate(clock=clk)
+    assert not gate.check_and_record("price-limit")  # startup cooldown
+    clk.t += 300
+    assert gate.check_and_record("price-limit")
+    assert not gate.check_and_record("price-limit")  # rate limit
+    assert gate.check_and_record("soc")              # independent per key
+    clk.t += 299
+    assert not gate.check_and_record("price-limit")
+    clk.t += 1
+    assert gate.check_and_record("price-limit")
+
+
+def test_two_parallel_calls_write_only_once():
+    import asyncio
+
+    clk = _Clock(0.0)
+    gate = dpp.DppWriteGate(clock=clk)
+    clk.t = 1000.0
+    lock = asyncio.Lock()
+    writes = []
+
+    async def call():
+        async with lock:
+            if not gate.check_and_record("price-limit"):
+                return False
+            await asyncio.sleep(0.01)  # simulated RSCP write
+            writes.append(1)
+            return True
+
+    async def main():
+        return await asyncio.gather(call(), call())
+
+    results = asyncio.run(main())
+    assert sorted(results) == [False, True]
+    assert len(writes) == 1

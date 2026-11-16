@@ -159,12 +159,15 @@ class E3DCProxy:
         Returns None if the device rejected the request or the read-back is invalid.
         """
         set_tag, _set_resp, set_type = DPP_WRITES[key]
-        data = self.e3dc.sendRequest((set_tag, set_type, value), keepAlive=True)
+        # retries=0: no automatic re-send of a write, no long lock on errors
+        data = self.e3dc.sendRequest((set_tag, set_type, value), retries=0, keepAlive=True)
         if not validate_set_response(data, key):
             _LOGGER.warning("DPP %s write rejected or unexpected answer: %s", key, data)
             return None
         req_tag, _resp_tag, _resp_type = DPP_READS[key]
-        readback = self.e3dc.sendRequest((req_tag, RscpType.NoneType, None), keepAlive=True)
+        readback = self.e3dc.sendRequest(
+            (req_tag, RscpType.NoneType, None), retries=0, keepAlive=True
+        )
         result = validate_response(key, readback)
         if result is None:
             _LOGGER.warning("DPP %s read-back invalid: %s", key, readback)

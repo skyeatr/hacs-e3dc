@@ -34,9 +34,9 @@ from .dpp import (
     ENTITY_KEYS as DPP_ENTITY_KEYS,
     evaluate,
     manual_refresh_allowed,
+    DppWriteGate,
     normalize_write_value,
     readback_matches,
-    write_allowed,
 )
 from .const import (
     CONF_RSCPKEY,
@@ -112,7 +112,8 @@ class E3DCCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._next_stat_update: float = 0
         self._next_dpp_update: float = 0
         self._last_dpp_manual: float | None = None
-        self._last_dpp_write: dict[str, float] = {}
+        # Per-value DPP write rate limit incl. 5 min startup cooldown
+        self._dpp_write_gate = DppWriteGate()
         self._dpp_lock = asyncio.Lock()
         self._isFarmController: bool = config_entry.data.get("farmcontroller", False)
 
@@ -460,13 +461,12 @@ class E3DCCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         target = normalize_write_value(key, value)
         if target is None:
             raise HomeAssistantError(f"DPP {key} value {value!r} invalid, not written")
-        now = time()
-        if not write_allowed(now, self._last_dpp_write.get(key)):
-            raise HomeAssistantError(
-                f"DPP {key} not written: last write less than 5 minutes ago"
-            )
         async with self._dpp_lock:
-            self._last_dpp_write[key] = now
+            # Rate limit checked and recorded under the lock (no parallel double write)
+            if not self._dpp_write_gate.check_and_record(key):
+                raise HomeAssistantError(
+                    f"DPP {key} not written: last write or integration start less than 5 minutes ago"
+                )
             _LOGGER.warning("Writing DPP %s = %s", key, target)
             try:
                 readback = await self.hass.async_add_executor_job(
@@ -475,7 +475,11 @@ class E3DCCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             except ConfigEntryAuthFailed:
                 raise
             except Exception as ex:  # noqa: BLE001
-                raise HomeAssistantError(f"DPP {key} write failed: {ex}") from ex
+                readback = None
+                _LOGGER.warning("DPP %s write failed: %s", key, ex)
+            # Always refresh the displayed DPP values afterwards, so the dashboard
+            # shows the real device state even after a failed write. Success is
+            # only reported if the read-back matches (see below).
             ok = await self._load_and_process_dpp_locked()
         self._next_dpp_update = time() + (
             _DPP_REFRESH_INTERVAL if ok else _DPP_RETRY_INTERVAL

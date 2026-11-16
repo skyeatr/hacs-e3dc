@@ -7,6 +7,8 @@ Pure functions without Home Assistant imports, so they can be unit tested.
 
 from __future__ import annotations
 
+import math
+from time import monotonic
 from typing import Any
 
 from e3dc._rscpTags import RscpTag, RscpType
@@ -141,28 +143,34 @@ WRITE_MIN_INTERVAL = 300.0
 PRICE_LIMIT_READBACK_TOLERANCE = 0.05
 
 
-def normalize_write_value(key: str, value: Any) -> Any:
-    """Return the value to write for key, or None if it is invalid.
+def _finite_number(value: Any) -> bool:
+    """True for int/float (not bool) that is finite."""
+    return (not isinstance(value, bool) and isinstance(value, (int, float))
+            and math.isfinite(float(value)))
 
+
+def normalize_write_value(key: str, value: Any) -> Any:
+    """Return the value to write for key, or None if it is invalid (fail-closed).
+
+    The raw value is range-checked BEFORE rounding, so -0.04 or 100.04 are rejected.
     price-limit: ct/kWh 0-100, rounded to 0.1
     soc:         percent 0-100, whole numbers only
     enabled:     bool only
     """
     if key == "price-limit":
-        if isinstance(value, bool) or not isinstance(value, (int, float)):
+        if not _finite_number(value):
             return None
-        value = round(float(value), 1)
-        if value != value or not PRICE_LIMIT_MIN <= value <= PRICE_LIMIT_MAX:
+        if not PRICE_LIMIT_MIN <= float(value) <= PRICE_LIMIT_MAX:
             return None
-        return value
+        return round(float(value), 1)
     if key == "soc":
-        if isinstance(value, bool):
+        if not _finite_number(value):
             return None
         if isinstance(value, float):
-            if value != value or not value.is_integer():
+            if not value.is_integer():
                 return None
             value = int(value)
-        if not isinstance(value, int) or not 0 <= value <= 100:
+        if not 0 <= value <= 100:
             return None
         return value
     if key == "enabled":
@@ -188,27 +196,53 @@ def price_write_allowed(now: float, last_write: float | None,
 
 
 def validate_set_response(data: Any, key: str = "price-limit") -> bool:
-    """True if the device answered the SET request with the expected response tag.
+    """True only if the device answered the SET request with the expected tag.
 
+    Fail-closed: anything else (no tuple, error type, foreign tag) is False.
+    pye3dc decodes tag and type as strings (rscpDecode) and raises an exception
+    for a top-level RSCP error frame; enum values are accepted as well.
     The value itself is not trusted; the setting is always read back.
     """
     if not isinstance(data, (tuple, list)) or len(data) < 2:
         return False
-    if _name(data[1]) == "Error":
+    if str(_name(data[1])) == "Error":
         return False
-    return _name(data[0]) == DPP_WRITES[key][1].name
+    return str(_name(data[0])) == DPP_WRITES[key][1].name
 
 
 def readback_matches(requested: Any, readback: Any, key: str = "price-limit") -> bool:
-    """Compare requested and read-back value (Float32 rounding tolerated for price)."""
+    """Compare requested and read-back value; anything unexpected is False."""
     if readback is None:
         return False
     if key == "price-limit":
-        if isinstance(readback, bool):
+        if not _finite_number(readback) or not _finite_number(requested):
             return False
         return abs(float(readback) - float(requested)) <= PRICE_LIMIT_READBACK_TOLERANCE
     if key == "soc":
-        return not isinstance(readback, bool) and readback == requested
+        return (not isinstance(readback, bool) and isinstance(readback, int)
+                and readback == requested)
     if key == "enabled":
         return isinstance(readback, bool) and readback is requested
     return False
+
+
+class DppWriteGate:
+    """Per-value rate limit for DPP writes with startup cooldown.
+
+    check_and_record() must be called while holding the DPP asyncio lock, so the
+    check and the recorded time are atomic for parallel service calls.
+    Uses a monotonic clock (immune to clock changes).
+    """
+
+    def __init__(self, interval: float = WRITE_MIN_INTERVAL, clock=monotonic) -> None:
+        self._interval = interval
+        self._clock = clock
+        start = clock()
+        self._last: dict[str, float] = {key: start for key in DPP_WRITES}
+
+    def check_and_record(self, key: str) -> bool:
+        now = self._clock()
+        if not write_allowed(now, self._last.get(key), self._interval):
+            return False
+        self._last[key] = now
+        return True
