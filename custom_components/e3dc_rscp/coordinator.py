@@ -1,5 +1,6 @@
 """Coordinator for E3DC integration."""
 
+import asyncio
 from datetime import timedelta, datetime
 import logging
 from time import time
@@ -104,6 +105,7 @@ class E3DCCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._next_stat_update: float = 0
         self._next_dpp_update: float = 0
         self._last_dpp_manual: float | None = None
+        self._dpp_lock = asyncio.Lock()
         self._isFarmController: bool = config_entry.data.get("farmcontroller", False)
 
         # Initialize battery manager
@@ -430,6 +432,9 @@ class E3DCCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if not manual_refresh_allowed(now, self._last_dpp_manual):
             _LOGGER.info("Manual DPP read ignored: last one less than 60 s ago")
             return False
+        if self._dpp_lock.locked():
+            _LOGGER.info("Manual DPP read ignored: a DPP read is already running")
+            return False
         self._last_dpp_manual = now
         ok = await self._load_and_process_dpp()
         self._next_dpp_update = now + (
@@ -439,6 +444,11 @@ class E3DCCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         return ok
 
     async def _load_and_process_dpp(self) -> bool:
+        """Serialize DPP reads (timer and button never overlap)."""
+        async with self._dpp_lock:
+            return await self._load_and_process_dpp_locked()
+
+    async def _load_and_process_dpp_locked(self) -> bool:
         """Load DPP settings, read-only and all-or-nothing.
 
         Any communication error, unexpected response or partial read sets all
