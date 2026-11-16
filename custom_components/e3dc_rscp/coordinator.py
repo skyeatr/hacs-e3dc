@@ -463,7 +463,7 @@ class E3DCCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             raise HomeAssistantError(f"DPP {key} value {value!r} invalid, not written")
         async with self._dpp_lock:
             # Rate limit checked and recorded under the lock (no parallel double write)
-            if not self._dpp_write_gate.check_and_record(key):
+            if not self._dpp_write_gate.check_and_record(key, target):
                 raise HomeAssistantError(
                     f"DPP {key} not written: last write or integration start less than 5 minutes ago"
                 )

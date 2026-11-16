@@ -232,6 +232,11 @@ class DppWriteGate:
     check_and_record() must be called while holding the DPP asyncio lock, so the
     check and the recorded time are atomic for parallel service calls.
     Uses a monotonic clock (immune to clock changes).
+
+    Safe-direction exception: switching price-based grid charging OFF
+    (enabled=false) is allowed once during the startup cooldown, so a fixed-price
+    tariff can be enforced right after an HA restart. The normal 5 min interval
+    between two writes still applies; there is no exception for switching ON.
     """
 
     def __init__(self, interval: float = WRITE_MIN_INTERVAL, clock=monotonic) -> None:
@@ -239,10 +244,28 @@ class DppWriteGate:
         self._clock = clock
         start = clock()
         self._last: dict[str, float] = {key: start for key in DPP_WRITES}
+        self._written: set[str] = set()
 
-    def check_and_record(self, key: str) -> bool:
+    def check_and_record(self, key: str, value: Any = None) -> bool:
         now = self._clock()
-        if not write_allowed(now, self._last.get(key), self._interval):
+        safe_off = key == "enabled" and value is False and key not in self._written
+        if not safe_off and not write_allowed(now, self._last.get(key), self._interval):
             return False
         self._last[key] = now
+        self._written.add(key)
         return True
+
+
+def strict_service_value(key: str):
+    """Voluptuous validator: no silent coercion (90.9 -> 90, "on" -> True, "25" -> 25).
+
+    Raises ValueError, which voluptuous reports as an invalid service value.
+    """
+
+    def _validate(value: Any) -> Any:
+        result = normalize_write_value(key, value)
+        if result is None:
+            raise ValueError(f"invalid value for DPP {key}: {value!r}")
+        return result
+
+    return _validate

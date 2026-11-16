@@ -24,6 +24,7 @@ from .const import (
     SetPowerMode,
 )
 from .coordinator import E3DCCoordinator
+from .dpp import strict_service_value
 
 _LOGGER = logging.getLogger(__name__)
 _device_map: dict[str, E3DCCoordinator] = {}
@@ -71,9 +72,7 @@ SCHEMA_MANUAL_CHARGE = vol.Schema(
 SCHEMA_SET_DPP_PRICE_LIMIT = vol.Schema(
     {
         vol.Required(ATTR_DEVICEID): str,
-        vol.Required(ATTR_PRICE_LIMIT): vol.All(
-            vol.Coerce(float), vol.Range(min=0.0, max=100.0)
-        ),
+        vol.Required(ATTR_PRICE_LIMIT): strict_service_value("price-limit"),
     }
 )
 
@@ -81,14 +80,14 @@ SCHEMA_SET_DPP_PRICE_LIMIT = vol.Schema(
 SCHEMA_SET_DPP_SOC = vol.Schema(
     {
         vol.Required(ATTR_DEVICEID): str,
-        vol.Required(ATTR_SOC): vol.All(vol.Coerce(int), vol.Range(min=0, max=100)),
+        vol.Required(ATTR_SOC): strict_service_value("soc"),
     }
 )
 
 SCHEMA_SET_DPP_CHARGE_ENABLED = vol.Schema(
     {
         vol.Required(ATTR_DEVICEID): str,
-        vol.Required(ATTR_ENABLED): vol.Boolean(),
+        vol.Required(ATTR_ENABLED): strict_service_value("enabled"),
     }
 )
 

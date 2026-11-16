@@ -271,3 +271,50 @@ def test_two_parallel_calls_write_only_once():
     results = asyncio.run(main())
     assert sorted(results) == [False, True]
     assert len(writes) == 1
+
+
+# --- GPT-20261116-2045: strict service values, safe OFF during startup cooldown
+
+import pytest
+
+
+@pytest.mark.parametrize("value,expected", [(90, 90), (90.0, 90)])
+def test_strict_soc_accepts(value, expected):
+    assert dpp.strict_service_value("soc")(value) == expected
+
+
+@pytest.mark.parametrize("value", [90.9, True, "90", float("nan"), float("inf"), -1, 101, None])
+def test_strict_soc_rejects(value):
+    with pytest.raises(ValueError):
+        dpp.strict_service_value("soc")(value)
+
+
+@pytest.mark.parametrize("value", ["25", True, float("nan"), -0.04, 100.04, None])
+def test_strict_price_rejects(value):
+    with pytest.raises(ValueError):
+        dpp.strict_service_value("price-limit")(value)
+
+
+@pytest.mark.parametrize("value", ["on", "false", 0, 1, None])
+def test_strict_enabled_rejects(value):
+    with pytest.raises(ValueError):
+        dpp.strict_service_value("enabled")(value)
+
+
+def test_safe_off_allowed_once_during_startup_cooldown():
+    clk = _Clock()
+    gate = dpp.DppWriteGate(clock=clk)
+    assert not gate.check_and_record("enabled", True)   # ON: no exception
+    assert gate.check_and_record("enabled", False)      # OFF: allowed right after start
+    assert not gate.check_and_record("enabled", False)  # but only once, then interval
+    assert not gate.check_and_record("price-limit", 25.0)  # other keys keep startup cooldown
+    clk.t += 300
+    assert gate.check_and_record("enabled", True)
+
+
+def test_safe_off_not_after_regular_write():
+    clk = _Clock()
+    gate = dpp.DppWriteGate(clock=clk)
+    clk.t += 300
+    assert gate.check_and_record("enabled", True)
+    assert not gate.check_and_record("enabled", False)  # interval applies after a real write
