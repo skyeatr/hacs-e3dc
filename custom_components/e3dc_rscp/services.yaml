@@ -124,3 +124,38 @@ set_dpp_price_limit:
           step: 0.1
           unit_of_measurement: ct/kWh
           mode: box
+
+set_dpp_soc:
+  fields:
+    device_id:
+      required: true
+      example: "64d3b74a1bcf319288844ff9e93e4010"
+      selector:
+        device:
+          filter:
+            integration: e3dc_rscp
+    soc:
+      required: true
+      example: "90"
+      selector:
+        number:
+          min: 0
+          max: 100
+          step: 1
+          unit_of_measurement: "%"
+          mode: box
+
+set_dpp_charge_enabled:
+  fields:
+    device_id:
+      required: true
+      example: "64d3b74a1bcf319288844ff9e93e4010"
+      selector:
+        device:
+          filter:
+            integration: e3dc_rscp
+    enabled:
+      required: true
+      example: "false"
+      selector:
+        boolean:

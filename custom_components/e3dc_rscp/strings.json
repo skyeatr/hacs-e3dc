@@ -688,6 +688,34 @@
         }
       }
     },
+    "set_dpp_soc": {
+      "name": "Set DPP battery target SoC",
+      "description": "Writes the AI 360 / DPP target state of charge for price-based grid charging and confirms it by read-back. At most once per 5 minutes.",
+      "fields": {
+        "device_id": {
+          "name": "E3DC Device ID",
+          "description": "E3DC Device ID."
+        },
+        "soc": {
+          "name": "Target SoC (%)",
+          "description": "New target state of charge, 0-100 %."
+        }
+      }
+    },
+    "set_dpp_charge_enabled": {
+      "name": "Enable/disable DPP grid charging",
+      "description": "Switches AI 360 / DPP price-based battery grid charging on or off and confirms it by read-back. At most once per 5 minutes.",
+      "fields": {
+        "device_id": {
+          "name": "E3DC Device ID",
+          "description": "E3DC Device ID."
+        },
+        "enabled": {
+          "name": "Enabled",
+          "description": "true = price-based grid charging allowed, false = off."
+        }
+      }
+    },
     "set_power_mode": {
       "name": "Set Power Mode",
       "description": "Sets the power mode of the E3DC unit.",

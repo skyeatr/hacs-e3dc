@@ -150,3 +150,52 @@ def test_request_encodes_as_float32():
     assert dpp._name(frame[0]) == "EMS_REQ_DPP_SET_PRICE_LIMIT_BATTERY"
     assert dpp._name(frame[1]) == "Float32"
     assert abs(frame[2] - 25.0) < 1e-6
+
+
+# --- ha2dpp3: target SoC and enable flag ------------------------------------
+
+def test_normalize_soc():
+    assert dpp.normalize_write_value("soc", 90) == 90
+    assert dpp.normalize_write_value("soc", 90.0) == 90
+    for bad in (-1, 101, 90.5, True, None, "90", float("nan")):
+        assert dpp.normalize_write_value("soc", bad) is None
+
+
+def test_normalize_enabled():
+    assert dpp.normalize_write_value("enabled", False) is False
+    assert dpp.normalize_write_value("enabled", True) is True
+    for bad in (0, 1, "false", None):
+        assert dpp.normalize_write_value("enabled", bad) is None
+
+
+def test_write_tags_and_types():
+    assert dpp.DPP_WRITES["soc"][0].name == "EMS_REQ_DPP_SET_SOC_BATTERY"
+    assert dpp.DPP_WRITES["enabled"][0].name == "EMS_REQ_DPP_SET_BATTERY_CHARGE_ENABLED"
+    frame = wire(*dpp.DPP_WRITES["soc"][0:1], dpp.DPP_WRITES["soc"][2], 90)
+    assert frame[2] == 90
+    frame = wire(dpp.DPP_WRITES["enabled"][0], dpp.DPP_WRITES["enabled"][2], False)
+    assert frame[2] is False
+
+
+def test_set_response_per_key():
+    ok_soc = wire(RscpTag.EMS_DPP_SET_SOC_BATTERY, RscpType.UChar8, 90)
+    ok_en = wire(RscpTag.EMS_DPP_SET_BATTERY_CHARGE_ENABLED, RscpType.Bool, False)
+    assert dpp.validate_set_response(ok_soc, "soc")
+    assert dpp.validate_set_response(ok_en, "enabled")
+    assert not dpp.validate_set_response(ok_soc, "enabled")
+    assert not dpp.validate_set_response(ok_en, "price-limit")
+
+
+def test_readback_soc_and_enabled():
+    rb_soc = dpp.validate_response("soc", wire(RscpTag.EMS_DPP_SOC_BATTERY, RscpType.UChar8, 90))
+    assert dpp.readback_matches(90, rb_soc, "soc")
+    assert not dpp.readback_matches(80, rb_soc, "soc")
+    rb_en = dpp.validate_response("enabled", wire(RscpTag.EMS_DPP_PRICE_BASED_BATTERY_CHARGE_ENABLED, RscpType.Bool, False))
+    assert dpp.readback_matches(False, rb_en, "enabled")
+    assert not dpp.readback_matches(True, rb_en, "enabled")
+    assert not dpp.readback_matches(False, None, "enabled")
+
+
+def test_rate_limit_is_per_value_helper():
+    assert dpp.write_allowed(1000.0, None)
+    assert not dpp.write_allowed(1100.0, 1000.0)

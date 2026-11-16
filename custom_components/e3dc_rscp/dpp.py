@@ -114,45 +114,101 @@ def manual_refresh_allowed(now: float, last_manual: float | None,
     return last_manual is None or now - last_manual >= min_interval
 
 
-# --- ha2dpp3: write the battery price limit only -------------------------
+# --- ha2dpp3: write price limit, target SoC and enable flag ----------------
+
+# key (same as DPP_READS) -> (set request tag, expected set response tag, request type)
+DPP_WRITES: dict[str, tuple[RscpTag, RscpTag, RscpType]] = {
+    "price-limit": (
+        RscpTag.EMS_REQ_DPP_SET_PRICE_LIMIT_BATTERY,
+        RscpTag.EMS_DPP_SET_PRICE_LIMIT_BATTERY,
+        RscpType.Float32,
+    ),
+    "soc": (
+        RscpTag.EMS_REQ_DPP_SET_SOC_BATTERY,
+        RscpTag.EMS_DPP_SET_SOC_BATTERY,
+        RscpType.UChar8,
+    ),
+    "enabled": (
+        RscpTag.EMS_REQ_DPP_SET_BATTERY_CHARGE_ENABLED,
+        RscpTag.EMS_DPP_SET_BATTERY_CHARGE_ENABLED,
+        RscpType.Bool,
+    ),
+}
 
 PRICE_LIMIT_MIN = 0.0
 PRICE_LIMIT_MAX = 100.0
-PRICE_LIMIT_WRITE_MIN_INTERVAL = 300.0
+WRITE_MIN_INTERVAL = 300.0
 PRICE_LIMIT_READBACK_TOLERANCE = 0.05
 
 
+def normalize_write_value(key: str, value: Any) -> Any:
+    """Return the value to write for key, or None if it is invalid.
+
+    price-limit: ct/kWh 0-100, rounded to 0.1
+    soc:         percent 0-100, whole numbers only
+    enabled:     bool only
+    """
+    if key == "price-limit":
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            return None
+        value = round(float(value), 1)
+        if value != value or not PRICE_LIMIT_MIN <= value <= PRICE_LIMIT_MAX:
+            return None
+        return value
+    if key == "soc":
+        if isinstance(value, bool):
+            return None
+        if isinstance(value, float):
+            if value != value or not value.is_integer():
+                return None
+            value = int(value)
+        if not isinstance(value, int) or not 0 <= value <= 100:
+            return None
+        return value
+    if key == "enabled":
+        return value if isinstance(value, bool) else None
+    return None
+
+
 def normalize_price_limit(value: Any) -> float | None:
-    """Return the requested price limit in ct/kWh rounded to 0.1, or None if invalid."""
-    if isinstance(value, bool) or not isinstance(value, (int, float)):
-        return None
-    value = round(float(value), 1)
-    if value != value or not PRICE_LIMIT_MIN <= value <= PRICE_LIMIT_MAX:  # NaN check
-        return None
-    return value
+    """Backwards compatible helper for the price limit."""
+    return normalize_write_value("price-limit", value)
 
 
-def price_write_allowed(now: float, last_write: float | None,
-                        min_interval: float = PRICE_LIMIT_WRITE_MIN_INTERVAL) -> bool:
-    """Rate limit for writing the price limit (protects the E3DC flash/EMS)."""
+def write_allowed(now: float, last_write: float | None,
+                  min_interval: float = WRITE_MIN_INTERVAL) -> bool:
+    """Rate limit per DPP value (protects the E3DC EMS from write storms)."""
     return last_write is None or now - last_write >= min_interval
 
 
-def validate_set_response(data: Any) -> bool:
-    """True if the device answered the SET request with its own response tag.
+def price_write_allowed(now: float, last_write: float | None,
+                        min_interval: float = WRITE_MIN_INTERVAL) -> bool:
+    """Backwards compatible helper for the price limit."""
+    return write_allowed(now, last_write, min_interval)
 
-    The value itself is not trusted; the price limit is always read back.
+
+def validate_set_response(data: Any, key: str = "price-limit") -> bool:
+    """True if the device answered the SET request with the expected response tag.
+
+    The value itself is not trusted; the setting is always read back.
     """
     if not isinstance(data, (tuple, list)) or len(data) < 2:
         return False
     if _name(data[1]) == "Error":
         return False
-    return _name(data[0]) == RscpTag.EMS_DPP_SET_PRICE_LIMIT_BATTERY.name
+    return _name(data[0]) == DPP_WRITES[key][1].name
 
 
-def readback_matches(requested: float, readback: Any,
-                     tolerance: float = PRICE_LIMIT_READBACK_TOLERANCE) -> bool:
-    """Compare requested and read-back price limit (Float32 rounding tolerated)."""
-    if readback is None or isinstance(readback, bool):
+def readback_matches(requested: Any, readback: Any, key: str = "price-limit") -> bool:
+    """Compare requested and read-back value (Float32 rounding tolerated for price)."""
+    if readback is None:
         return False
-    return abs(float(readback) - float(requested)) <= tolerance
+    if key == "price-limit":
+        if isinstance(readback, bool):
+            return False
+        return abs(float(readback) - float(requested)) <= PRICE_LIMIT_READBACK_TOLERANCE
+    if key == "soc":
+        return not isinstance(readback, bool) and readback == requested
+    if key == "enabled":
+        return isinstance(readback, bool) and readback is requested
+    return False

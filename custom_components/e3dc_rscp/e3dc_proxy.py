@@ -18,7 +18,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed, HomeAssistantError
 
 from .const import CONF_RSCPKEY
-from .dpp import DPP_READS, validate_response, validate_set_response
+from .dpp import DPP_READS, DPP_WRITES, validate_response, validate_set_response
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -153,24 +153,22 @@ class E3DCProxy:
         return result
 
     @e3dc_call
-    def set_dpp_price_limit(self, price_limit: float) -> float | None:
-        """Write the DPP battery price limit (ct/kWh) and return the read-back value.
+    def set_dpp_value(self, key: str, value: Any) -> Any:
+        """Write one DPP setting (price-limit, soc or enabled) and return its read-back.
 
         Returns None if the device rejected the request or the read-back is invalid.
         """
-        data = self.e3dc.sendRequest(
-            (RscpTag.EMS_REQ_DPP_SET_PRICE_LIMIT_BATTERY, RscpType.Float32, price_limit),
-            keepAlive=True,
-        )
-        if not validate_set_response(data):
-            _LOGGER.warning("DPP price limit write rejected or unexpected answer: %s", data)
+        set_tag, _set_resp, set_type = DPP_WRITES[key]
+        data = self.e3dc.sendRequest((set_tag, set_type, value), keepAlive=True)
+        if not validate_set_response(data, key):
+            _LOGGER.warning("DPP %s write rejected or unexpected answer: %s", key, data)
             return None
-        req_tag, _resp_tag, _resp_type = DPP_READS["price-limit"]
+        req_tag, _resp_tag, _resp_type = DPP_READS[key]
         readback = self.e3dc.sendRequest((req_tag, RscpType.NoneType, None), keepAlive=True)
-        value = validate_response("price-limit", readback)
-        if value is None:
-            _LOGGER.warning("DPP price limit read-back invalid: %s", readback)
-        return value
+        result = validate_response(key, readback)
+        if result is None:
+            _LOGGER.warning("DPP %s read-back invalid: %s", key, readback)
+        return result
 
     @e3dc_call
     def get_manual_charge(self) -> dict[str, Any]:

@@ -34,9 +34,9 @@ from .dpp import (
     ENTITY_KEYS as DPP_ENTITY_KEYS,
     evaluate,
     manual_refresh_allowed,
-    normalize_price_limit,
-    price_write_allowed,
+    normalize_write_value,
     readback_matches,
+    write_allowed,
 )
 from .const import (
     CONF_RSCPKEY,
@@ -112,7 +112,7 @@ class E3DCCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._next_stat_update: float = 0
         self._next_dpp_update: float = 0
         self._last_dpp_manual: float | None = None
-        self._last_dpp_write: float | None = None
+        self._last_dpp_write: dict[str, float] = {}
         self._dpp_lock = asyncio.Lock()
         self._isFarmController: bool = config_entry.data.get("farmcontroller", False)
 
@@ -451,44 +451,42 @@ class E3DCCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.async_update_listeners()
         return ok
 
-    async def async_set_dpp_price_limit(self, price_limit: float) -> float:
-        """Write the DPP battery price limit with validation, rate limit and read-back.
+    async def async_set_dpp_value(self, key: str, value: Any) -> Any:
+        """Write one DPP setting with validation, rate limit and read-back.
 
-        Raises HomeAssistantError on any failure so the calling script sees it.
-        Only the price limit is written; SoC, months and enable stay untouched.
+        key is one of price-limit, soc, enabled. Raises HomeAssistantError on any
+        failure so the calling script sees it. Other DPP settings stay untouched.
         """
-        value = normalize_price_limit(price_limit)
-        if value is None:
-            raise HomeAssistantError(
-                f"DPP price limit {price_limit} outside 0-100 ct/kWh, not written"
-            )
+        target = normalize_write_value(key, value)
+        if target is None:
+            raise HomeAssistantError(f"DPP {key} value {value!r} invalid, not written")
         now = time()
-        if not price_write_allowed(now, self._last_dpp_write):
+        if not write_allowed(now, self._last_dpp_write.get(key)):
             raise HomeAssistantError(
-                "DPP price limit not written: last write less than 5 minutes ago"
+                f"DPP {key} not written: last write less than 5 minutes ago"
             )
         async with self._dpp_lock:
-            self._last_dpp_write = now
-            _LOGGER.warning("Writing DPP battery price limit %.1f ct/kWh", value)
+            self._last_dpp_write[key] = now
+            _LOGGER.warning("Writing DPP %s = %s", key, target)
             try:
                 readback = await self.hass.async_add_executor_job(
-                    self.proxy.set_dpp_price_limit, value
+                    self.proxy.set_dpp_value, key, target
                 )
             except ConfigEntryAuthFailed:
                 raise
             except Exception as ex:  # noqa: BLE001
-                raise HomeAssistantError(f"DPP price limit write failed: {ex}") from ex
+                raise HomeAssistantError(f"DPP {key} write failed: {ex}") from ex
             ok = await self._load_and_process_dpp_locked()
         self._next_dpp_update = time() + (
             _DPP_REFRESH_INTERVAL if ok else _DPP_RETRY_INTERVAL
         )
         self.async_update_listeners()
-        if not readback_matches(value, readback):
+        if not readback_matches(target, readback, key):
             raise HomeAssistantError(
-                f"DPP price limit not confirmed: requested {value}, read back {readback}"
+                f"DPP {key} not confirmed: requested {target}, read back {readback}"
             )
-        _LOGGER.warning("DPP battery price limit confirmed at %.2f ct/kWh", readback)
-        return float(readback)
+        _LOGGER.warning("DPP %s confirmed at %s", key, readback)
+        return readback
 
     async def _load_and_process_dpp(self) -> bool:
         """Serialize DPP reads (timer and button never overlap)."""
